@@ -1,3 +1,11 @@
+---
+- hosts: "{{mysql_node_host_name1}} {{mysql_node_host_name2}} {{mysql_node_host_name3}}"
+  become: yes
+  vars_files:
+    - vars/main.yml
+  vars: 
+    mysql_node_host_name1: mysql1
+  tasks:
   - name: Install the iptable package
     become: yes
     package:
@@ -204,3 +212,115 @@
     become: yes
     template: src=myconf1.cnf dest=/etc/mysql/mysql.conf.d/mysqld.cnf  owner=root mode=0600
 
+- hosts: mysql1
+  tasks:
+  - name: insert server id for instance1
+    become: yes
+    lineinfile:
+      destfile: /etc/mysql/my.cnf
+      line: '{{ item }}'
+      insertbefore: EOF
+    with_items:
+    - 'server_id=201801'
+    - 'group_replication_local_address   = 172.31.43.58:13306'
+    - 'group_replication_group_seeds     = 172.31.17.17:13306,172.31.18.251:13306'
+    notify: restart mysql
+  handlers:
+    - include: handlers/main.yml
+
+- hosts: mysql2
+  tasks:
+  - name: insert server id for instnace2
+    become: yes
+    lineinfile:
+      destfile: /etc/mysql/my.cnf
+      line: '{{ item }}'
+      insertbefore: EOF
+    with_items:
+    - 'server_id=201802'
+    - 'group_replication_local_address   = 172.31.17.17:13306'
+    - 'group_replication_group_seeds     = 172.31.43.58:13306,172.31.18.251:13306'
+    notify: restart mysql
+  handlers:
+    - include: handlers/main.yml
+
+- hosts: mysql3
+  tasks:
+  - name: insert server id for instnace3
+    become: yes
+    lineinfile:
+      destfile: /etc/mysql/my.cnf
+      line: '{{ item }}'
+      insertbefore: EOF
+    with_items:
+    - 'server_id=201803'
+    - 'group_replication_local_address   = 172.31.18.251:13306'
+    - 'group_replication_group_seeds     = 172.31.17.17:13306,172.31.43.58:13306'
+    notify: restart mysql
+  handlers:
+    - include: handlers/main.yml
+#- hosts: mysql1 mysql2 mysql3
+#  become: yes
+#  tasks:
+#  - name: restart mysql
+#    service: name=mysql
+#             enabled=yes
+#             state=restarted
+
+- hosts: mysql1 mysql2 mysql3
+  tasks:
+  - name: Copy mysql credentail config file
+    become: yes
+    template: src=my.cnf dest=/home/ubuntu/.my.cnf  owner=root mode=0600
+#Run mysql command to bring GTID_MODE to appropriate value.  
+#Run mysql commands to create cluster user iwth appropriate priveleges.
+  - name: Copy  mysql Script for Global variable setting
+    become: yes
+    template: src=mysqlUser.sh dest=/home/ubuntu/mysqlUser.sh  owner=root mode=0777
+
+  - name: execute mysql script to set Global variable setting. 
+    become: yes
+    shell: /home/ubuntu/mysqlUser.sh  >> log9.txt
+    register: scriptoutput
+  - debug: msg="{{scriptoutput.stdout}}"
+  - debug: msg="{{scriptoutput.stderr}}"
+#copy the configureInstance() for each  node separately .   
+- hosts: mysql1
+  tasks:
+  - name: Copy mysqlShellJsCommand1 for configuring the cluster
+    become: yes
+    template: src=mysqlJsCommands1 dest=/home/ubuntu/mysqlJsCommands1  owner=root mode=0777
+
+  - name: Configure Cluster1
+    become: yes
+    shell: mysqlsh  -f mysqlJsCommands1
+
+- hosts: mysql2
+  tasks:
+  - name: Copy mysqlShellJsCommand2 for configuring the cluster
+    become: yes
+    template: src=mysqlJsCommands2 dest=/home/ubuntu/mysqlJsCommands2  owner=root mode=0777
+
+  - name: Configure Cluster2
+    become: yes
+    shell: mysqlsh  -f mysqlJsCommands2
+
+- hosts: mysql3
+  tasks:
+  - name: Copy mysqlShellJsCommand3 for configuring the cluster
+    become: yes
+    template: src=mysqlJsCommands3 dest=/home/ubuntu/mysqlJsCommands3  owner=root mode=0777
+
+  - name: Configure Cluster3
+    become: yes
+    shell: mysqlsh  -f mysqlJsCommands3
+
+- hosts: mysql1
+  tasks:
+  - name: Copy mysqlShellJsCommandsCommon for configuring the cluster
+    become: yes
+    template: src=mysqlJsCommandsCommon dest=/home/ubuntu/mysqlJsCommandsCommon  owner=root mode=0777
+
+  - name: Configure Cluster Common
+    become: yes
+    shell: mysqlsh  -f mysqlJsCommandsCommon
